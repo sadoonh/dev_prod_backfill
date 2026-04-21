@@ -1,28 +1,65 @@
-name: Deploy
+# .github/workflows/backfill.yml
+name: Energy DB Backfill
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run only (no writes)"
+        type: boolean
+        default: true
+      tech:
+        description: "Specific tech to run (blank = all)"
+        type: choice
+        options: ["", "solar", "battery", "wind", "tline", "substation"]
+        default: ""
 
 jobs:
-  deploy:
+  backfill:
     runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 300
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      - name: Restore checkpoint
+        uses: actions/cache@v4
         with:
-          python-version: "3.11"
+          path: backfill/state/progress.json
+          key: backfill-state-${{ github.run_id }}
+          restore-keys: backfill-state-
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v5     
+        with:
+          version: "latest"
+          enable-cache: true           
 
       - name: Install dependencies
-        run: uv sync
+        working-directory: backfill
+        run: uv sync --frozen           
 
-      - name: Run tests
-        run: echo "Add tests here"
+      - name: Run backfill
+        working-directory: backfill
+        env:
+          DEV_DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          uv run python orchestrator.py \
+            ${{ inputs.dry_run == 'true' && '--dry-run' || '' }} \
+            ${{ inputs.tech != '' && format('--tech {0}', inputs.tech) || '' }}
 
-      - name: Deploy
-        run: echo "Add deployment logic here"
+      - name: Save checkpoint
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: backfill/state/progress.json
+          key: backfill-state-${{ github.run_id }}
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backfill-logs-${{ github.run_id }}
+          path: backfill/state/

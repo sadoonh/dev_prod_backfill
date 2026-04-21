@@ -2,7 +2,7 @@ import concurrent.futures
 import logging
 import os
 import psycopg2
-from config import TECHS, DATE_CHUNKS, BATCH_SIZE, NATURAL_KEY, get_tables_for_tech
+from config import TECHS, DATE_CHUNKS, BATCH_SIZE, PRIMARY_KEY, get_tables_for_tech
 from checkpoint import load_state, mark_chunk_done, is_chunk_done
 from reader import read_batches
 from writer import bulk_upsert
@@ -17,7 +17,7 @@ def backfill_tech(tech: str, state: dict, dry_run: bool = False):
     prod_conn = psycopg2.connect(os.environ["PROD_DATABASE_URL"])
 
     for table in get_tables_for_tech(tech):  # pre → assumption → model
-        nk = NATURAL_KEY[table]
+        pk = PRIMARY_KEY[table]
 
         for date_from, date_to in DATE_CHUNKS:
             chunk_key = f"{date_from}__{date_to}"
@@ -28,10 +28,10 @@ def backfill_tech(tech: str, state: dict, dry_run: bool = False):
 
             total = 0
             for rows, cols in read_batches(
-                dev_conn, table, nk, date_from, date_to, BATCH_SIZE
+                dev_conn, table, pk, date_from, date_to, BATCH_SIZE
             ):
                 if not dry_run:
-                    bulk_upsert(prod_conn, table, rows, cols, nk)
+                    bulk_upsert(prod_conn, table, rows, cols, pk)
                 total += len(rows)
                 logging.info(
                     f"{'[DRY]' if dry_run else ''} "
@@ -42,7 +42,7 @@ def backfill_tech(tech: str, state: dict, dry_run: bool = False):
             if not dry_run:
                 mark_chunk_done(state, table, chunk_key)
 
-        logging.info(f"✓ {table} complete")
+        logging.info(f"{table} complete")
 
     dev_conn.close()
     prod_conn.close()
@@ -58,9 +58,9 @@ def main(dry_run: bool = False, techs: list = None):
             tech = futures[f]
             try:
                 f.result()
-                logging.info(f"✓✓ Tech [{tech}] fully complete")
+                logging.info(f"Tech [{tech}] fully complete")
             except Exception as e:
-                logging.error(f"✗ Tech [{tech}] failed: {e}")
+                logging.error(f"Tech [{tech}] failed: {e}")
                 raise
 
 

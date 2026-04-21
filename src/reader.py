@@ -1,7 +1,7 @@
 def read_batches(
     dev_conn,
     table: str,
-    natural_key: str,
+    primary_key: str,
     date_from: str,
     date_to: str,
     batch_size: int,
@@ -17,7 +17,7 @@ def read_batches(
             query = f"""
                 SELECT * FROM {table}
                 WHERE created_at >= %s AND created_at < %s
-                ORDER BY {natural_key} ASC
+                ORDER BY {primary_key} ASC
                 LIMIT %s
             """
             params = (date_from, date_to, batch_size)
@@ -25,8 +25,8 @@ def read_batches(
             query = f"""
                 SELECT * FROM {table}
                 WHERE created_at >= %s AND created_at < %s
-                  AND {natural_key} > %s
-                ORDER BY {natural_key} ASC
+                  AND {primary_key} > %s
+                ORDER BY {primary_key} ASC
                 LIMIT %s
             """
             params = (date_from, date_to, last_key, batch_size)
@@ -40,4 +40,4 @@ def read_batches(
             break
 
         yield rows, cols
-        last_key = rows[-1][cols.index(natural_key)]
+        last_key = rows[-1][cols.index(primary_key)]
